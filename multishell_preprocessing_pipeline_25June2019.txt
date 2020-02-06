@@ -1,0 +1,105 @@
+subject='cat $1'
+
+#multi-shell diffusion data workflow (Todd Richard)
+
+#1. fslroi DWI64 S0 0 1 (total volumn=1)
+
+#2. fslroi DWI64 DWIs 1 64 (total volumn=64)
+
+#3. fslmerge -t b0_topup_dn S0 DW6_topop DW6_topdn (total volumn=15)
+
+#4. topup --imain=b0_topup_dn --datain=nbwr_acqparams_modified.txt  --config=b02b0.cnf --out=b0_topup_dn_output --iout=b0_topup_dn_output_unwarped #(total volume=15)
+
+fslmaths b0_topup_dn_output_unwarped -Tmean b0_tmean_output_unwarped
+
+bet2 b0_tmean_output_unwarped b0_tmean_output_unwarped_brain -m -f 0.2
+
+fslmerge -t data S0 DWI_topup DWI_topdn DWIs #(total volumn=79)
+
+
+### for bvecs  ###  make sure to move the 15th element to the first in order to align with the order of files that are merged into the #data.nii.gz(=S0,topup,topdn,DWIs)
+#     paste CONTROL_1017_WIP_DWI_B0_TOPUP_SENSE_6_1.bvecs CONTROL_1017_WIP_DWI_B0_TOPDN_SENSE_5_1.bvecs 
+#     CONTROL_1017_WIP_DWI64_3SH_B0_B800_B2000_TOPUP_SENSE_4_1.bvecs > bvecs
+
+#     paste CONTROL_1017_WIP_DWI_B0_TOPUP_SENSE_6_1.bvals CONTROL_1017_WIP_DWI_B0_TOPDN_SENSE_5_1.bvals
+#     CONTROL_1017_WIP_DWI64_3SH_B0_B800_B2000_TOPUP_SENSE_4_1.bvals > bvals
+
+
+     paste $1_WIP_DWI_B0_TOPUP_SENSE_6_1.bvecs $1_WIP_DWI_B0_TOPDN_SENSE_5_1.bvecs 
+     $1_WIP_DWI64_3SH_B0_B800_B2000_TOPUP_SENSE_4_1.bvecs > bvecs
+
+     paste $1_WIP_DWI_B0_TOPUP_SENSE_6_1.bvals $1_WIP_DWI_B0_TOPDN_SENSE_5_1.bvals
+     $1_WIP_DWI64_3SH_B0_B800_B2000_TOPUP_SENSE_4_1.bvals > bvals
+
+
+
+
+
+### input from the topup can be specified by using the topup basename: b0_topup_dn_output. Eddy will look for all 3 topup outfiles: 
+### movpar.txt, fieldcoef and _unwarped.nii  #### 
+cp ../CONTROL1007/*_index.txt .
+eddy --imain=data --mask=b0_tmean_output_unwarped_brain_mask --acqp=nbwr_acqparams_modified.txt --index=nbwr_index.txt --bvecs=bvecs --bvals=bvals --topup=b0_topup_dn_output --out=eddy_corrected_data
+
+fslmaths b0_tmean_output_unwarped_brain_mask -kernel 2D -ero -ero nodif_brain_mask
+
+bedpostx eddy_corrected_data -n 2 --model=2 #(using eddy corrected bvecs for the bedpostx)
+
+
+
+
+##########################################################################################
+# The following scripts need to be modified. subjects' FA maps look swallened.           #
+# One possible cause may be the filter. I did not have filter in this pipeline.
+# Will use Todd's filter. See below.                                                      #
+
+dtifit --data=eddy_corrected_data --mask=nodif_brain_mask.nii.gz --bvals=bvals --bvecs=bvecs --out=${subjid}_unfiltered --save_tensor
+#fslmaths ${subjid}_unfiltered_tensor -s 1 ${subjid}_s1_tensor
+#fslmaths ${subjid}_s1_tensor -tensor_decomp ${subjid}_ts1
+#fslmaths ${subjid}_ts1_L2 -add ${subjid}_ts1_L3 -div 2.0 ${subjid}_ts1_ra
+#fslroi data data_xdwi 1 1
+#fslroi data data_ydwi 2 1
+#fslroi data data_zdwi 3 1
+#fslmaths data_xdwi -add data_ydwi -add data_zdwi -div 3 data_trace
+#fslmaths data_trace -s 1 data_trace_s1
+#fslmaths ${subjid}_unfiltered_S0 -div data_trace_s1 -log -div 1500 ${subjid}_ts1_ADC
+
+
+#########################################################################################
+# Todd sent his commands on June 24th. 
+
+#dtifit -k data -o output_directory -b bval -r bvec -m mask --sse --save_tensor
+dtifit --data=eddy_corrected_data --mask=nodif_brain_mask.nii.gz --bvals=bvals --bvecs=bvecs --sse --out=${subjid}_unfiltered --save_tensor
+
+#fslmaths tensor_name -fmedian filtered_tensor
+ fslmaths ${subjid}_unfiltered_tensor -fmedian ${subjid}_filtered_tensor
+ 
+#fslmaths filtered_tensor -tensor_decomp filtered
+ fslmaths ${subjid}_filtered_tensor -tensor_decomp ${subjid}_ts1
+ 
+#fslmaths filtered_L2 -add filtered_L3 -div 2.0 filtered_RA
+ fslmaths ${subjid}_ts1_L2 -add ${subjid}_ts1_L3 -div 2.0 ${subjid}_ts1_ra
+ 
+fslroi data data_xdwi 1 1
+fslroi data data_ydwi 2 1
+fslroi data data_zdwi 3 1
+fslmaths data_xdwi -add data_ydwi -add data_zdwi -div 3 data_trace
+fslmaths data_trace -s 1 data_trace_s1
+fslmaths ${subjid}_unfiltered_S0 -div data_trace_s1 -log -div 1500 ${subjid}_ts1_ADC
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
